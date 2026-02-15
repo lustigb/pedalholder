@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bicycle Pedal Stroke Simulator</title>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+body { display: grid; grid-template-rows: 44px 1fr 94px; background: #1E1E26; color: #D9D9D9; }
+
+/* Toolbar */
+#toolbar { display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #292933; }
+#toolbar button { border: none; padding: 6px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; color: #fff; font-size: 13px; }
+#btn-play { background: #33A64D; }
+#btn-play.playing { background: #998833; }
+#btn-reset { background: #8C4040; }
+#toolbar select { background: #1A1A21; color: #D9D9D9; border: 1px solid #4D4D59; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+#toolbar label { font-size: 12px; color: #999; }
+#title { flex: 1; text-align: center; font-weight: bold; font-size: 14px; color: #D9D9D9; }
+
+/* Main area */
+#main-area { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 4px; min-height: 0; }
+
+/* Side panels */
+.side-panel { display: flex; flex-direction: column; background: #292933; border-radius: 4px; overflow: hidden; min-height: 0; }
+.side-panel h2 { padding: 6px 10px; font-size: 13px; font-weight: bold; }
+.side-panel canvas { flex: 1; width: 100%; min-height: 0; display: block; }
+.crank-row { display: flex; align-items: center; gap: 6px; padding: 4px 10px; height: 40px; flex-shrink: 0; }
+.crank-row label { font-size: 11px; color: #999; width: 48px; }
+.crank-row input[type="range"] { flex: 1; }
+.crank-row .val { font-size: 12px; font-weight: bold; min-width: 52px; text-align: right; }
+
+/* Dashboard */
+#panel-dash { display: flex; flex-direction: column; background: #292933; border-radius: 4px; overflow: hidden; min-height: 0; }
+#panel-dash h2 { padding: 6px 10px; font-size: 13px; font-weight: bold; color: #D9D9D9; flex-shrink: 0; }
+.dash-section { padding: 4px 10px; flex-shrink: 0; }
+.dash-section h3 { font-size: 11px; color: #888; margin-bottom: 2px; }
+.dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 8px; }
+.dash-grid .hdr { font-size: 10px; font-weight: bold; text-align: center; }
+.dash-grid .big { font-size: 18px; font-weight: bold; text-align: center; }
+.dash-grid .sub { font-size: 10px; text-align: center; }
+.dash-grid .dim { color: #777; font-size: 9px; text-align: center; }
+#panel-dash canvas { flex: 1; width: 100%; min-height: 0; display: block; }
+
+/* Controls footer */
+#controls { display: grid; grid-template-columns: 62px 1fr 54px 16px 62px 1fr 54px 16px; grid-template-rows: 1fr 1fr; gap: 4px 6px; align-items: center; padding: 6px 14px; background: #292933; }
+#controls label { font-size: 11px; color: #999; }
+#controls .val { font-size: 11px; font-weight: bold; color: #D9D9D9; }
+
+/* Range sliders */
+input[type="range"] { -webkit-appearance: none; appearance: none; background: #1A1A21; height: 5px; border-radius: 3px; outline: none; cursor: pointer; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #5588DD; border: none; cursor: pointer; }
+input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #5588DD; border: none; cursor: pointer; }
+
+/* ---- Mobile responsive layout ---- */
+@media (max-width: 900px) {
+  body { grid-template-rows: auto 1fr auto; overflow-y: auto; }
+  #toolbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  #title { width: 100%; order: -1; text-align: center; font-size: 13px; }
+  #main-area { grid-template-columns: 1fr; grid-template-rows: auto; overflow-y: auto; }
+  .side-panel canvas { flex: none; height: 220px; }
+  #panel-dash canvas { flex: none; height: 180px; }
+  #controls { grid-template-columns: 62px 1fr 54px; grid-template-rows: repeat(4, 1fr); padding: 8px 10px; }
+  #controls span:empty { display: none; }
+  input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; }
+  input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
+  input[type="range"] { height: 8px; }
+}
+</style>
+</head>
+<body>
+
+<header id="toolbar">
+  <button id="btn-play" onclick="togglePlay()">Play</button>
+  <button id="btn-reset" onclick="resetAnim()">Reset</button>
+  <label>Speed: <select id="dd-speed" onchange="onSpeedChange()">
+    <option value="0.25">0.25x</option>
+    <option value="0.5">0.5x</option>
+    <option value="1" selected>1x</option>
+    <option value="2">2x</option>
+    <option value="4">4x</option>
+  </select></label>
+  <label>Mode: <select id="dd-mode" onchange="onParamChange()">
+    <option value="force">Constant Force</option>
+    <option value="power">Constant Power</option>
+  </select></label>
+  <span id="title">Crank Length Biomechanics Simulator</span>
+</header>
+
+<main id="main-area">
+  <!-- Side A -->
+  <section class="side-panel" id="panel-a">
+    <h2 style="color:#3373F2">Side A: <span id="lbl-panel-a">170</span> mm</h2>
+    <canvas id="canvas-leg-a"></canvas>
+    <canvas id="canvas-polar-a"></canvas>
+    <div class="crank-row">
+      <label>Crank:</label>
+      <input type="range" id="slider-crank-a" min="100" max="220" value="170" step="1" oninput="onCrankSlide('a')" onchange="onParamChange()">
+      <span class="val" id="lbl-crank-a" style="color:#3373F2">170 mm</span>
+    </div>
+  </section>
+
+  <!-- Side B -->
+  <section class="side-panel" id="panel-b">
+    <h2 style="color:#F27333">Side B: <span id="lbl-panel-b">150</span> mm</h2>
+    <canvas id="canvas-leg-b"></canvas>
+    <canvas id="canvas-polar-b"></canvas>
+    <div class="crank-row">
+      <label>Crank:</label>
+      <input type="range" id="slider-crank-b" min="100" max="220" value="150" step="1" oninput="onCrankSlide('b')" onchange="onParamChange()">
+      <span class="val" id="lbl-crank-b" style="color:#F27333">150 mm</span>
+    </div>
+  </section>
+
+  <!-- Dashboard -->
+  <section id="panel-dash">
+    <h2>Dashboard</h2>
+    <div class="dash-section">
+      <h3>Power</h3>
+      <div class="dash-grid">
+        <div class="hdr" style="color:#3373F2">Side A</div>
+        <div class="hdr" style="color:#F27333">Side B</div>
+        <div class="big" style="color:#3373F2" id="inst-pow-a">0 W</div>
+        <div class="big" style="color:#F27333" id="inst-pow-b">0 W</div>
+        <div class="sub" id="avg-pow-a">Avg: 0 W | Peak: 0 W</div>
+        <div class="sub" id="avg-pow-b">Avg: 0 W | Peak: 0 W</div>
+      </div>
+    </div>
+    <div class="dash-section">
+      <h3>Efficiency &amp; Energy</h3>
+      <div class="dash-grid">
+        <div class="hdr" style="color:#3373F2">Side A</div>
+        <div class="hdr" style="color:#F27333">Side B</div>
+        <div class="sub" id="metab-a" style="font-weight:bold">Physiol: 0%</div>
+        <div class="sub" id="metab-b" style="font-weight:bold">Physiol: 0%</div>
+        <div class="dim" id="gross-a">Gross: 0%</div>
+        <div class="dim" id="gross-b">Gross: 0%</div>
+        <div class="sub" id="energy-a">Energy: 0 kJ</div>
+        <div class="sub" id="energy-b">Energy: 0 kJ</div>
+        <div class="dim" id="optcad-a">Opt. cad: 0 rpm</div>
+        <div class="dim" id="optcad-b">Opt. cad: 0 rpm</div>
+      </div>
+    </div>
+    <canvas id="canvas-rom"></canvas>
+    <canvas id="canvas-torque"></canvas>
+  </section>
+</main>
+
+<footer id="controls">
+  <label>Cadence:</label>
+  <input type="range" id="slider-cadence" min="30" max="200" value="90" step="1" oninput="onSliderLive('cadence','rpm')" onchange="onParamChange()">
+  <span class="val" id="lbl-cadence">90 rpm</span>
+  <span></span>
+  <label>Leg len:</label>
+  <input type="range" id="slider-leg" min="700" max="1000" value="840" step="1" oninput="onSliderLive('leg','mm')" onchange="onParamChange()">
+  <span class="val" id="lbl-leg">840 mm</span>
+  <span></span>
+  <label>Force:</label>
+  <input type="range" id="slider-force" min="50" max="600" value="200" step="1" oninput="onSliderLive('force','N')" onchange="onParamChange()">
+  <span class="val" id="lbl-force">200 N</span>
+  <span></span>
+  <label>Mass:</label>
+  <input type="range" id="slider-mass" min="40" max="120" value="75" step="1" oninput="onSliderLive('mass','kg')" onchange="onParamChange()">
+  <span class="val" id="lbl-mass">75 kg</span>
+  <span></span>
+</footer>
+
+<script>
+'use strict';
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const COL_A = '#3373F2', COL_B = '#F27333';
+const BG = '#1A1A21', GRID_COL = '#4D4D59', GRID_DIM = '#3A3A45';
+const PI = Math.PI, TWO_PI = 2 * PI;
+
+// ============================================================
+// GEOMETRY (port of BikeGeometry.m)
+// ============================================================
+function createGeometry(crankM, legM, peakForce, cadenceRpm, riderMass) {
+  const thigh = legM * 0.512;
+  const shank = legM * 0.488;
+  const hipX = -0.02;
+  const targetRad = 150 * PI / 180;
+  const distBDC = Math.sqrt(thigh * thigh + shank * shank - 2 * thigh * shank * Math.cos(targetRad));
+  const hipY = Math.sqrt(Math.max(0, distBDC * distBDC - hipX * hipX)) - crankM;
+  return { crankLength: crankM, thigh, shank, hipX, hipY, peakForce, cadenceRpm, riderMass, upstroke: 0.05 };
+}
+
+// ============================================================
+// IK SOLVER (port of BikeModel.m:81-131)
+// ============================================================
+function solveIK(g, theta) {
+  const px = g.crankLength * Math.sin(theta);
+  const py = g.crankLength * Math.cos(theta);
+  const dx = px - g.hipX, dy = py - g.hipY;
+  let dist = Math.sqrt(dx * dx + dy * dy);
+  dist = Math.max(Math.abs(g.thigh - g.shank) + 0.001, Math.min(g.thigh + g.shank - 0.001, dist));
+  const alpha = Math.atan2(dy, dx);
+  let ck = (g.thigh ** 2 + g.shank ** 2 - dist ** 2) / (2 * g.thigh * g.shank);
+  ck = Math.max(-1, Math.min(1, ck));
+  const kneeInt = Math.acos(ck);
+  let cb = (g.thigh ** 2 + dist ** 2 - g.shank ** 2) / (2 * g.thigh * dist);
+  cb = Math.max(-1, Math.min(1, cb));
+  const beta = Math.acos(cb);
+  const thighAng = alpha + beta;
+  const kx = g.hipX + g.thigh * Math.cos(thighAng);
+  const ky = g.hipY + g.thigh * Math.sin(thighAng);
+  return { kx, ky, px, py, hipDeg: Math.atan2(kx - g.hipX, g.hipY - ky) * 180 / PI, kneeDeg: (PI - kneeInt) * 180 / PI };
+}
+
+// ============================================================
+// FORCE MODEL (port of BikeModel.m:133-151)
+// ============================================================
+function effectiveForce(g, theta) {
+  if (theta >= 0 && theta < PI) return g.peakForce * Math.sin(theta) * (1 + 0.1 * Math.sin(2 * theta - PI / 3));
+  return -g.peakForce * g.upstroke * Math.sin(theta - PI);
+}
+
+// ============================================================
+// PROFILE (port of BikeModel.computeProfile + TorqueProfile.m)
+// ============================================================
+function computeProfile(g) {
+  const N = 360, omega = TWO_PI * g.cadenceRpm / 60;
+  const theta = new Float64Array(N), force = new Float64Array(N), torque = new Float64Array(N);
+  const power = new Float64Array(N), hipAng = new Float64Array(N), kneeAng = new Float64Array(N);
+  const kxArr = new Float64Array(N), kyArr = new Float64Array(N);
+  const pxArr = new Float64Array(N), pyArr = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    const th = i * TWO_PI / N;
+    theta[i] = th;
+    const ik = solveIK(g, th);
+    kxArr[i] = ik.kx; kyArr[i] = ik.ky; pxArr[i] = ik.px; pyArr[i] = ik.py;
+    hipAng[i] = ik.hipDeg; kneeAng[i] = ik.kneeDeg;
+    const f = effectiveForce(g, th);
+    force[i] = f; torque[i] = f * g.crankLength; power[i] = torque[i] * omega;
+  }
+  let sumP = 0, maxP = -Infinity, hipMin = Infinity, hipMax = -Infinity, kneeMin = Infinity, kneeMax = -Infinity;
+  for (let i = 0; i < N; i++) {
+    sumP += power[i]; if (power[i] > maxP) maxP = power[i];
+    if (hipAng[i] < hipMin) hipMin = hipAng[i]; if (hipAng[i] > hipMax) hipMax = hipAng[i];
+    if (kneeAng[i] < kneeMin) kneeMin = kneeAng[i]; if (kneeAng[i] > kneeMax) kneeMax = kneeAng[i];
+  }
+  const avgP = sumP / N, crankMm = Math.round(g.crankLength * 1000);
+  const crankM = g.crankLength;
+  let etaBase = 0.221 - (0.005 / 0.030) * (crankM - 0.150);
+  etaBase = Math.max(0.15, Math.min(0.25, etaBase));
+  const grossEff = avgP > 0 ? avgP / (avgP / etaBase + 75) : 0;
+  const optCad = 120 * Math.sqrt(0.170 / crankM);
+  return { theta, force, torque, power, hipAng, kneeAng, kxArr, kyArr, pxArr, pyArr,
+    avgPower: avgP, peakPower: maxP, hipRom: hipMax - hipMin, kneeRom: kneeMax - kneeMin,
+    metabEff: etaBase, grossEff, optCad, crankMm };
+}
+
+// ============================================================
+// STATE
+// ============================================================
+let geomA, geomB, profA, profB;
+let anim = { running: false, angle: 0, elapsed: 0, lastTs: null, speed: 1, rafId: null };
+
+function readParams() {
+  return {
+    crankA: +document.getElementById('slider-crank-a').value,
+    crankB: +document.getElementById('slider-crank-b').value,
+    cadence: +document.getElementById('slider-cadence').value,
+    leg: +document.getElementById('slider-leg').value,
+    force: +document.getElementById('slider-force').value,
+    mass: +document.getElementById('slider-mass').value,
+    mode: document.getElementById('dd-mode').value,
+  };
+}
+
+function recompute() {
+  const p = readParams();
+  geomA = createGeometry(p.crankA / 1000, p.leg / 1000, p.force, p.cadence, p.mass);
+  geomB = createGeometry(p.crankB / 1000, p.leg / 1000, p.force, p.cadence, p.mass);
+  profA = computeProfile(geomA);
+  profB = computeProfile(geomB);
+  if (p.mode === 'power' && profB.avgPower > 0 && profA.avgPower > 0) {
+    const adj = p.force * (profA.avgPower / profB.avgPower);
+    geomB = createGeometry(p.crankB / 1000, p.leg / 1000, adj, p.cadence, p.mass);
+    profB = computeProfile(geomB);
+  }
+  anim.cadence = p.cadence;
+}
+
+// ============================================================
+// CANVAS SIZING
+// ============================================================
+const canvasMap = new Map();
+function sizeCanvas(canvas) {
+  const parent = canvas.parentElement;
+  const rect = { w: canvas.clientWidth || parent.clientWidth, h: canvas.clientHeight || parent.clientHeight };
+  if (rect.w < 1 || rect.h < 1) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.w * dpr; canvas.height = rect.h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvasMap.set(canvas.id, { ctx, w: rect.w, h: rect.h });
+}
+function sizeAllCanvases() {
+  ['canvas-leg-a','canvas-leg-b','canvas-polar-a','canvas-polar-b','canvas-rom','canvas-torque'].forEach(id => sizeCanvas(document.getElementById(id)));
+}
+
+// ============================================================
+// DRAW: LEG LINKAGE (port of renderLegLinkage.m)
+// ============================================================
+function drawLeg(canvasId, g, theta, color) {
+  const c = canvasMap.get(canvasId); if (!c) return;
+  const { ctx, w, h } = c;
+  const ik = solveIK(g, theta);
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = BG; ctx.fillRect(0, 0, w, h);
+
+  const wMinX = -0.35, wMaxX = 0.35, wMinY = -0.30, wMaxY = g.hipY + 0.10;
+  const wW = wMaxX - wMinX, wH = wMaxY - wMinY;
+  const sc = Math.min(w / wW, h / wH) * 0.95;
+  const ox = (w - wW * sc) / 2, oy = (h - wH * sc) / 2;
+  function tp(wx, wy) { return [ox + (wx - wMinX) * sc, h - oy - (wy - wMinY) * sc]; }
+
+  // Crank circle
+  ctx.strokeStyle = GRID_COL; ctx.lineWidth = 1; ctx.setLineDash([6, 4]); ctx.beginPath();
+  for (let i = 0; i <= 100; i++) { const a = i / 100 * TWO_PI; const [x, y] = tp(g.crankLength * Math.sin(a), g.crankLength * Math.cos(a)); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Crank arm
+  ctx.strokeStyle = '#8C8C8E'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath();
+  const [bx, by] = tp(0, 0), [ppx, ppy] = tp(ik.px, ik.py);
+  ctx.moveTo(bx, by); ctx.lineTo(ppx, ppy); ctx.stroke();
+
+  // Thigh
+  ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.beginPath();
+  const [hpx, hpy] = tp(g.hipX, g.hipY), [kpx, kpy] = tp(ik.kx, ik.ky);
+  ctx.moveTo(hpx, hpy); ctx.lineTo(kpx, kpy); ctx.stroke();
+
+  // Shank
+  ctx.strokeStyle = darken(color, 0.75); ctx.lineWidth = 5; ctx.beginPath();
+  ctx.moveTo(kpx, kpy); ctx.lineTo(ppx, ppy); ctx.stroke();
+  ctx.lineCap = 'butt';
+
+  // Markers
+  dot(ctx, bx, by, 5, '#666', '#999');
+  dot(ctx, hpx, hpy, 8, '#DDD', color);
+  dot(ctx, kpx, kpy, 6, color, '#FFF');
+  sqr(ctx, ppx, ppy, 7, '#E6CC33', '#4D4D4D');
+}
+
+function dot(ctx, x, y, r, fill, stroke) {
+  ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TWO_PI); ctx.fill(); ctx.stroke();
+}
+function sqr(ctx, x, y, s, fill, stroke) {
+  ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 1.5;
+  ctx.fillRect(x - s, y - s, 2 * s, 2 * s); ctx.strokeRect(x - s, y - s, 2 * s, 2 * s);
+}
+function darken(hex, f) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return '#' + [r, g, b].map(c => Math.round(c * f).toString(16).padStart(2, '0')).join('');
+}
+
+// ============================================================
+// DRAW: TORQUE POLAR (port of renderTorquePolar.m)
+// ============================================================
+function drawPolar(canvasId, prof, theta, color) {
+  const c = canvasMap.get(canvasId); if (!c) return;
+  const { ctx, w, h } = c;
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = BG; ctx.fillRect(0, 0, w, h);
+
+  const tNorm = prof.torque.map(t => Math.max(0, t));
+  let maxT = 0; for (let i = 0; i < tNorm.length; i++) if (tNorm[i] > maxT) maxT = tNorm[i];
+  if (maxT === 0) maxT = 1;
+  const margin = maxT * 1.3;
+  const sc = Math.min(w, h) / (2 * margin);
+  const cx = w / 2, cy = h / 2;
+  function tp(wx, wy) { return [cx + wx * sc, cy - wy * sc]; }
+
+  // Reference circles
+  ctx.setLineDash([4, 4]); ctx.lineWidth = 0.5;
+  for (const r of [maxT, maxT / 2]) {
+    ctx.strokeStyle = r === maxT ? GRID_COL : GRID_DIM; ctx.beginPath();
+    for (let i = 0; i <= 100; i++) { const a = i / 100 * TWO_PI; const [x, y] = tp(r * Math.sin(a), r * Math.cos(a)); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Crosshairs
+  ctx.strokeStyle = GRID_DIM; ctx.lineWidth = 0.5; ctx.beginPath();
+  let [x1, y1] = tp(0, maxT * 1.1), [x2, y2] = tp(0, -maxT * 1.1);
+  ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  [x1, y1] = tp(-maxT * 1.1, 0); [x2, y2] = tp(maxT * 1.1, 0);
+  ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = '#808080'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const off = maxT * 1.18;
+  let [lx, ly] = tp(0, off); ctx.fillText('TDC', lx, ly);
+  [lx, ly] = tp(0, -off); ctx.fillText('BDC', lx, ly);
+  [lx, ly] = tp(off, 0); ctx.fillText('90\u00B0', lx, ly);
+  [lx, ly] = tp(-off, 0); ctx.fillText('270\u00B0', lx, ly);
+
+  // Filled profile
+  ctx.fillStyle = color + '26'; ctx.beginPath();
+  for (let i = 0; i <= 360; i++) { const idx = i % 360; const [x, y] = tp(tNorm[idx] * Math.sin(prof.theta[idx]), tNorm[idx] * Math.cos(prof.theta[idx])); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+  ctx.closePath(); ctx.fill();
+
+  // Profile line
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let i = 0; i <= 360; i++) { const idx = i % 360; const [x, y] = tp(tNorm[idx] * Math.sin(prof.theta[idx]), tNorm[idx] * Math.cos(prof.theta[idx])); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+  ctx.stroke();
+
+  // Radial + marker
+  const aidx = Math.max(0, Math.min(359, Math.round(theta * 180 / PI) % 360));
+  const mr = tNorm[aidx], mx = mr * Math.sin(theta), my = mr * Math.cos(theta);
+  const [ox2, oy2] = tp(0, 0), [mpx, mpy] = tp(mx, my);
+  ctx.strokeStyle = color + '99'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(ox2, oy2); ctx.lineTo(mpx, mpy); ctx.stroke();
+  ctx.fillStyle = color; ctx.strokeStyle = '#FFF'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mpx, mpy, 5, 0, TWO_PI); ctx.fill(); ctx.stroke();
+}
+
+// ============================================================
+// DRAW: ROM BAR CHART (port of pedalStrokeSim.m:598-619)
+// ============================================================
+function drawRomChart() {
+  const c = canvasMap.get('canvas-rom'); if (!c) return;
+  const { ctx, w, h } = c;
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = BG; ctx.fillRect(0, 0, w, h);
+
+  const data = [{ label: 'Hip', a: profA.hipRom, b: profB.hipRom }, { label: 'Knee', a: profA.kneeRom, b: profB.kneeRom }];
+  const maxVal = Math.max(...data.map(d => Math.max(d.a, d.b))) * 1.15 || 1;
+
+  const pl = 40, pr = 10, pt = 22, pb = 22;
+  const pw = w - pl - pr, ph = h - pt - pb;
+  const gw = pw / data.length, bw = gw * 0.32, gap = gw * 0.06;
+
+  ctx.fillStyle = '#D9D9D9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Joint Range of Motion', w / 2, 14);
+
+  // Axes
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.beginPath();
+  ctx.moveTo(pl, pt); ctx.lineTo(pl, pt + ph); ctx.lineTo(pl + pw, pt + ph); ctx.stroke();
+
+  // Y ticks
+  ctx.fillStyle = '#999'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = 0; v <= maxVal; v += 20) {
+    const y = pt + ph - (v / maxVal) * ph;
+    ctx.fillText(v + '\u00B0', pl - 4, y);
+    ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(pl + pw, y); ctx.stroke();
+  }
+
+  data.forEach((d, i) => {
+    const gx = pl + i * gw;
+    const hA = (d.a / maxVal) * ph, hB = (d.b / maxVal) * ph;
+    ctx.fillStyle = COL_A; ctx.fillRect(gx + gap, pt + ph - hA, bw, hA);
+    ctx.fillStyle = COL_B; ctx.fillRect(gx + gap + bw + gap, pt + ph - hB, bw, hB);
+
+    // Value labels
+    ctx.fillStyle = COL_A; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(d.a.toFixed(1) + '\u00B0', gx + gap + bw / 2, pt + ph - hA - 4);
+    ctx.fillStyle = COL_B;
+    ctx.fillText(d.b.toFixed(1) + '\u00B0', gx + gap + bw + gap + bw / 2, pt + ph - hB - 4);
+
+    ctx.fillStyle = '#D9D9D9'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
+    ctx.fillText(d.label, gx + gw / 2, pt + ph + 5);
+  });
+
+  // Legend
+  ctx.font = '9px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const lx = w - pr - 80, ly = pt + 10;
+  ctx.fillStyle = COL_A; ctx.fillRect(lx, ly - 4, 10, 8); ctx.fillText('A: ' + profA.crankMm + 'mm', lx + 14, ly);
+  ctx.fillStyle = COL_B; ctx.fillRect(lx, ly + 12, 10, 8); ctx.fillText('B: ' + profB.crankMm + 'mm', lx + 14, ly + 16);
+}
+
+// ============================================================
+// DRAW: TORQUE OVERLAY (port of pedalStrokeSim.m:621-645)
+// ============================================================
+function drawTorqueOverlay() {
+  const c = canvasMap.get('canvas-torque'); if (!c) return;
+  const { ctx, w, h } = c;
+  ctx.clearRect(0, 0, w, h); ctx.fillStyle = BG; ctx.fillRect(0, 0, w, h);
+
+  const pl = 44, pr = 10, pt = 22, pb = 24;
+  const pw = w - pl - pr, ph = h - pt - pb;
+
+  let minT = 0, maxT = 0;
+  for (let i = 0; i < 360; i++) {
+    if (profA.torque[i] < minT) minT = profA.torque[i]; if (profA.torque[i] > maxT) maxT = profA.torque[i];
+    if (profB.torque[i] < minT) minT = profB.torque[i]; if (profB.torque[i] > maxT) maxT = profB.torque[i];
+  }
+  minT = Math.min(minT * 1.1, -0.5); maxT = maxT * 1.1 || 1;
+  const tRange = maxT - minT;
+
+  ctx.fillStyle = '#D9D9D9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Torque Profile Comparison', w / 2, 14);
+
+  // Axes
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.beginPath();
+  ctx.moveTo(pl, pt); ctx.lineTo(pl, pt + ph); ctx.lineTo(pl + pw, pt + ph); ctx.stroke();
+
+  // Zero line
+  const zeroY = pt + ph - ((0 - minT) / tRange) * ph;
+  ctx.strokeStyle = '#444'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(pl, zeroY); ctx.lineTo(pl + pw, zeroY); ctx.stroke(); ctx.setLineDash([]);
+
+  // X ticks
+  ctx.fillStyle = '#999'; ctx.font = '9px sans-serif'; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  const xlabels = [{ v: 0, l: 'TDC' }, { v: 90, l: '90\u00B0' }, { v: 180, l: 'BDC' }, { v: 270, l: '270\u00B0' }, { v: 360, l: 'TDC' }];
+  xlabels.forEach(xl => {
+    const x = pl + (xl.v / 360) * pw;
+    ctx.fillText(xl.l, x, pt + ph + 6);
+    ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(x, pt); ctx.lineTo(x, pt + ph); ctx.stroke();
+  });
+
+  // Y label
+  ctx.save(); ctx.translate(12, pt + ph / 2); ctx.rotate(-PI / 2); ctx.fillStyle = '#999'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Torque (N\u00B7m)', 0, 0); ctx.restore();
+
+  // Line A
+  function plotLine(prof, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    for (let i = 0; i < 360; i++) { const x = pl + (i / 359) * pw; const y = pt + ph - ((prof.torque[i] - minT) / tRange) * ph; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+    ctx.stroke();
+  }
+  plotLine(profA, COL_A); plotLine(profB, COL_B);
+
+  // Legend
+  ctx.font = '9px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const lx = w - pr - 80, ly = pt + 10;
+  ctx.fillStyle = COL_A; ctx.fillRect(lx, ly - 4, 10, 8); ctx.fillText('A: ' + profA.crankMm + 'mm', lx + 14, ly);
+  ctx.fillStyle = COL_B; ctx.fillRect(lx, ly + 12, 10, 8); ctx.fillText('B: ' + profB.crankMm + 'mm', lx + 14, ly + 16);
+}
+
+// ============================================================
+// DASHBOARD TEXT UPDATES
+// ============================================================
+function updateDashboard() {
+  document.getElementById('avg-pow-a').textContent = 'Avg: ' + Math.round(profA.avgPower) + ' W | Peak: ' + Math.round(profA.peakPower) + ' W';
+  document.getElementById('avg-pow-b').textContent = 'Avg: ' + Math.round(profB.avgPower) + ' W | Peak: ' + Math.round(profB.peakPower) + ' W';
+  document.getElementById('metab-a').textContent = 'Physiol: ' + (profA.metabEff * 100).toFixed(1) + '%';
+  document.getElementById('metab-b').textContent = 'Physiol: ' + (profB.metabEff * 100).toFixed(1) + '%';
+  document.getElementById('gross-a').textContent = 'Gross: ' + (profA.grossEff * 100).toFixed(1) + '%';
+  document.getElementById('gross-b').textContent = 'Gross: ' + (profB.grossEff * 100).toFixed(1) + '%';
+  document.getElementById('optcad-a').textContent = 'Opt. cad: ' + Math.round(profA.optCad) + ' rpm';
+  document.getElementById('optcad-b').textContent = 'Opt. cad: ' + Math.round(profB.optCad) + ' rpm';
+}
+
+function updateFrameText(theta, elapsed) {
+  const idx = Math.max(0, Math.min(359, Math.round(theta * 180 / PI) % 360));
+  document.getElementById('inst-pow-a').textContent = Math.round(Math.max(0, profA.power[idx])) + ' W';
+  document.getElementById('inst-pow-b').textContent = Math.round(Math.max(0, profB.power[idx])) + ' W';
+  document.getElementById('energy-a').textContent = 'Energy: ' + (profA.avgPower * elapsed / 1000).toFixed(1) + ' kJ';
+  document.getElementById('energy-b').textContent = 'Energy: ' + (profB.avgPower * elapsed / 1000).toFixed(1) + ' kJ';
+}
+
+// ============================================================
+// RENDER ALL
+// ============================================================
+function renderAll(full) {
+  drawLeg('canvas-leg-a', geomA, anim.angle, COL_A);
+  drawLeg('canvas-leg-b', geomB, anim.angle, COL_B);
+  drawPolar('canvas-polar-a', profA, anim.angle, COL_A);
+  drawPolar('canvas-polar-b', profB, anim.angle, COL_B);
+  updateFrameText(anim.angle, anim.elapsed);
+  if (full) { drawRomChart(); drawTorqueOverlay(); updateDashboard(); }
+}
+
+// ============================================================
+// ANIMATION (port of PedalAnimator.m)
+// ============================================================
+function animTick(ts) {
+  if (!anim.running) return;
+  if (anim.lastTs === null) anim.lastTs = ts;
+  let dt = (ts - anim.lastTs) / 1000;
+  anim.lastTs = ts;
+  dt = Math.min(dt, 0.2);
+  const omega = TWO_PI * (readParams().cadence) / 60;
+  anim.angle = (anim.angle + omega * dt * anim.speed) % TWO_PI;
+  anim.elapsed += dt * anim.speed;
+  renderAll(false);
+  anim.rafId = requestAnimationFrame(animTick);
+}
+
+function togglePlay() {
+  if (anim.running) { anim.running = false; if (anim.rafId) cancelAnimationFrame(anim.rafId); anim.rafId = null; }
+  else { anim.running = true; anim.lastTs = null; anim.rafId = requestAnimationFrame(animTick); }
+  const btn = document.getElementById('btn-play');
+  btn.textContent = anim.running ? 'Pause' : 'Play';
+  btn.classList.toggle('playing', anim.running);
+}
+
+function resetAnim() {
+  anim.running = false; if (anim.rafId) cancelAnimationFrame(anim.rafId);
+  anim.rafId = null; anim.angle = 0; anim.elapsed = 0; anim.lastTs = null;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = 'Play'; btn.classList.remove('playing');
+  renderAll(true);
+}
+
+// ============================================================
+// UI BINDINGS
+// ============================================================
+function onCrankSlide(side) {
+  const v = Math.round(document.getElementById('slider-crank-' + side).value);
+  document.getElementById('lbl-crank-' + side).textContent = v + ' mm';
+  document.getElementById('lbl-panel-' + side).textContent = v;
+}
+
+function onSliderLive(name, unit) {
+  const v = Math.round(document.getElementById('slider-' + name).value);
+  document.getElementById('lbl-' + name).textContent = v + ' ' + unit;
+}
+
+function onSpeedChange() { anim.speed = +document.getElementById('dd-speed').value; }
+
+function onParamChange() {
+  // Update all labels
+  onCrankSlide('a'); onCrankSlide('b');
+  onSliderLive('cadence', 'rpm'); onSliderLive('leg', 'mm'); onSliderLive('force', 'N'); onSliderLive('mass', 'kg');
+  recompute();
+  renderAll(true);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  recompute();
+  sizeAllCanvases();
+  renderAll(true);
+  new ResizeObserver(() => { sizeAllCanvases(); renderAll(true); }).observe(document.getElementById('main-area'));
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
