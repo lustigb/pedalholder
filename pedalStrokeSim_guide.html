@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pedal Stroke Simulator — Technical Guide</title>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1E1E26; color: #D9D9D9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.7; padding: 20px; max-width: 860px; margin: 0 auto; }
+h1 { color: #7EB8FF; font-size: 26px; margin: 30px 0 10px; border-bottom: 2px solid #3373F2; padding-bottom: 8px; }
+h2 { color: #5BA3F5; font-size: 20px; margin: 28px 0 8px; }
+h3 { color: #F2A533; font-size: 16px; margin: 20px 0 6px; }
+p { margin: 8px 0; }
+.eq { background: #292933; border-left: 3px solid #3373F2; padding: 10px 16px; margin: 12px 0; font-family: 'Courier New', monospace; font-size: 14px; color: #E8E8E8; border-radius: 0 4px 4px 0; overflow-x: auto; }
+.eq-orange { border-left-color: #F27333; }
+.eq-green { border-left-color: #33A64D; }
+table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+th, td { border: 1px solid #3A3A45; padding: 6px 12px; text-align: left; font-size: 14px; }
+th { background: #292933; color: #7EB8FF; }
+td { background: #22222A; }
+.note { background: #2A2A35; border: 1px solid #444; border-radius: 6px; padding: 12px 16px; margin: 12px 0; font-size: 13px; }
+.note strong { color: #F2A533; }
+a { color: #5BA3F5; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.ref { font-size: 13px; color: #999; margin: 4px 0; padding-left: 20px; text-indent: -20px; }
+.subtitle { color: #888; font-size: 14px; margin-bottom: 20px; }
+code { background: #292933; padding: 1px 5px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 13px; color: #E8C8A0; }
+ul, ol { margin: 8px 0 8px 24px; }
+li { margin: 4px 0; }
+hr { border: none; border-top: 1px solid #3A3A45; margin: 30px 0; }
+.fig-label { text-align: center; color: #888; font-size: 12px; font-style: italic; margin: 4px 0 12px; }
+.toc { background: #292933; border-radius: 6px; padding: 16px 24px; margin: 16px 0; }
+.toc a { display: block; margin: 3px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>Bicycle Pedal Stroke Simulator</h1>
+<p class="subtitle">Technical Guide &amp; Equation Reference</p>
+
+<p>This document describes the biomechanical model, physics equations, and research basis for the
+interactive pedal stroke simulator. The simulator compares two crank lengths side-by-side, showing
+how crank length affects joint kinematics, pedal forces, power output, and metabolic efficiency.</p>
+
+<div class="toc">
+<strong>Contents</strong>
+<a href="#s1">1. Coordinate System &amp; Geometry</a>
+<a href="#s2">2. Rider Geometry &amp; Bike Fit</a>
+<a href="#s3">3. Inverse Kinematics (Leg Model)</a>
+<a href="#s4">4. Pedal Force Model</a>
+<a href="#s5">5. Torque &amp; Power</a>
+<a href="#s6">6. Efficiency Models</a>
+<a href="#s7">7. Optimal Cadence</a>
+<a href="#s8">8. Constant Power Mode</a>
+<a href="#s9">9. Assumptions &amp; Limitations</a>
+<a href="#s10">10. Research References</a>
+</div>
+
+<hr>
+
+<h1 id="s1">1. Coordinate System &amp; Geometry</h1>
+
+<p>The model uses a 2D sagittal-plane (side view) coordinate system:</p>
+
+<ul>
+<li><strong>Origin:</strong> Bottom bracket center (where the crank axle sits)</li>
+<li><strong>X-axis:</strong> Positive = forward (direction of travel)</li>
+<li><strong>Y-axis:</strong> Positive = upward</li>
+<li><strong>Crank angle &theta;:</strong> 0&deg; = Top Dead Center (TDC, 12 o'clock), increasing clockwise</li>
+</ul>
+
+<p>This means:</p>
+<ul>
+<li>&theta; = 0&deg;: Pedal at the top (TDC)</li>
+<li>&theta; = 90&deg;: Pedal forward (3 o'clock) &mdash; peak force zone</li>
+<li>&theta; = 180&deg;: Pedal at the bottom (BDC, Bottom Dead Center)</li>
+<li>&theta; = 270&deg;: Pedal rearward (9 o'clock)</li>
+</ul>
+
+<h2>Pedal Position</h2>
+
+<p>The pedal traces a circle of radius <em>L</em> (crank length) around the bottom bracket:</p>
+
+<div class="eq">
+p<sub>x</sub>(&theta;) = L &middot; sin(&theta;)<br>
+p<sub>y</sub>(&theta;) = L &middot; cos(&theta;)
+</div>
+
+<p>At TDC (&theta;=0): pedal is at (0, +L), directly above the BB.<br>
+At BDC (&theta;=&pi;): pedal is at (0, &minus;L), directly below the BB.</p>
+
+<hr>
+
+<h1 id="s2">2. Rider Geometry &amp; Bike Fit</h1>
+
+<h2>Leg Segment Lengths</h2>
+
+<p>The rider's leg is modeled as two rigid segments (thigh and shank) connected at the knee.
+Segment lengths are derived from inseam (standing leg length) using standard anthropometric
+ratios from biomechanics literature:</p>
+
+<div class="eq">
+L<sub>thigh</sub> = L<sub>inseam</sub> &times; 0.512<br>
+L<sub>shank</sub> = L<sub>inseam</sub> &times; 0.488
+</div>
+
+<p>For the default 840 mm inseam: thigh = 430 mm, shank = 410 mm.</p>
+
+<h2>Hip Position</h2>
+
+<p>The hip joint is fixed (rigid torso assumption). Its horizontal position is:</p>
+
+<div class="eq">
+x<sub>hip</sub> = &minus;0.02 m (2 cm behind the BB, typical road bike geometry)
+</div>
+
+<p>The vertical position (<em>seat height</em>) is the critical fit parameter. It is <strong>automatically
+computed</strong> so that the rider's knee is at 150&deg; internal angle when the pedal is at BDC &mdash;
+this is a standard bike fitting rule (30&deg; of flexion from full extension). This models what
+a real rider does: when you change crank length, you adjust your seat height to maintain
+proper fit.</p>
+
+<h3>Derivation of Hip Height</h3>
+
+<p>At BDC, the pedal is at position (0, &minus;L). The distance from hip to pedal must equal the
+distance between hip and ankle when the knee is at 150&deg;. Using the law of cosines:</p>
+
+<div class="eq">
+d<sub>BDC</sub> = &radic;(L<sub>thigh</sub>&sup2; + L<sub>shank</sub>&sup2; &minus; 2 &middot; L<sub>thigh</sub> &middot; L<sub>shank</sub> &middot; cos(150&deg;))
+</div>
+
+<p>Since cos(150&deg;) &asymp; &minus;0.866, the double-negative makes <em>d<sub>BDC</sub></em> larger than either
+segment alone. Then:</p>
+
+<div class="eq">
+y<sub>hip</sub> = &radic;(d<sub>BDC</sub>&sup2; &minus; x<sub>hip</sub>&sup2;) &minus; L<sub>crank</sub>
+</div>
+
+<p>The subtraction of <em>L<sub>crank</sub></em> accounts for the fact that the pedal is <em>L<sub>crank</sub></em>
+below the BB at BDC, and the hip must be positioned so the total hip-to-pedal distance equals
+<em>d<sub>BDC</sub></em>.</p>
+
+<div class="note">
+<strong>Key insight:</strong> When you shorten the crank, the hip drops (seat lowers) by
+approximately the same amount. A 20 mm crank reduction results in roughly a 20 mm seat height
+reduction. This keeps the knee angle at BDC constant, which is the primary bike fit constraint.
+</div>
+
+<table>
+<tr><th>Crank Length</th><th>Hip Height (y<sub>hip</sub>)</th><th>Change from 170mm</th></tr>
+<tr><td>150 mm</td><td>661 mm</td><td>&minus;20 mm</td></tr>
+<tr><td>170 mm</td><td>641 mm</td><td>&mdash;</td></tr>
+<tr><td>180 mm</td><td>631 mm</td><td>&minus;10 mm</td></tr>
+</table>
+
+<hr>
+
+<h1 id="s3">3. Inverse Kinematics (Leg Model)</h1>
+
+<p>Given the hip position (fixed) and pedal position (varies with &theta;), we solve for the knee
+position using a 2-link inverse kinematics solver based on the law of cosines. This is the
+geometric core of the simulator.</p>
+
+<h2>Step 1: Distance from Hip to Pedal</h2>
+
+<div class="eq">
+&Delta;x = p<sub>x</sub> &minus; x<sub>hip</sub><br>
+&Delta;y = p<sub>y</sub> &minus; y<sub>hip</sub><br>
+d = &radic;(&Delta;x&sup2; + &Delta;y&sup2;)
+</div>
+
+<p>The distance <em>d</em> is clamped to the reachable range to prevent mathematical errors:</p>
+
+<div class="eq">
+d<sub>min</sub> = |L<sub>thigh</sub> &minus; L<sub>shank</sub>| + 0.001<br>
+d<sub>max</sub> = L<sub>thigh</sub> + L<sub>shank</sub> &minus; 0.001<br>
+d = clamp(d, d<sub>min</sub>, d<sub>max</sub>)
+</div>
+
+<h2>Step 2: Angle from Hip to Pedal</h2>
+
+<div class="eq">
+&alpha; = atan2(&Delta;y, &Delta;x)
+</div>
+
+<h2>Step 3: Knee Internal Angle (Law of Cosines)</h2>
+
+<p>The internal angle at the knee joint (the angle between thigh and shank, measured on the
+posterior side):</p>
+
+<div class="eq">
+cos(&theta;<sub>knee</sub>) = (L<sub>thigh</sub>&sup2; + L<sub>shank</sub>&sup2; &minus; d&sup2;) / (2 &middot; L<sub>thigh</sub> &middot; L<sub>shank</sub>)<br>
+&theta;<sub>knee</sub> = arccos(clamp(cos(&theta;<sub>knee</sub>), &minus;1, 1))
+</div>
+
+<h2>Step 4: Thigh Angle</h2>
+
+<p>The offset angle &beta; accounts for the triangle geometry:</p>
+
+<div class="eq">
+cos(&beta;) = (L<sub>thigh</sub>&sup2; + d&sup2; &minus; L<sub>shank</sub>&sup2;) / (2 &middot; L<sub>thigh</sub> &middot; d)<br>
+&beta; = arccos(clamp(cos(&beta;), &minus;1, 1))<br>
+<br>
+&phi;<sub>thigh</sub> = &alpha; + &beta;
+</div>
+
+<p>The <code>+</code> sign places the knee <em>anterior</em> (in front of) the hip-to-pedal line, which
+is the anatomically correct configuration for cycling.</p>
+
+<h2>Step 5: Knee Position</h2>
+
+<div class="eq">
+x<sub>knee</sub> = x<sub>hip</sub> + L<sub>thigh</sub> &middot; cos(&phi;<sub>thigh</sub>)<br>
+y<sub>knee</sub> = y<sub>hip</sub> + L<sub>thigh</sub> &middot; sin(&phi;<sub>thigh</sub>)
+</div>
+
+<h2>Step 6: Anatomical Joint Angles</h2>
+
+<p>For the dashboard display, we compute anatomical angles that correspond to how joint angles
+are reported in clinical biomechanics:</p>
+
+<div class="eq">
+<strong>Hip flexion</strong> (relative to vertical trunk):<br>
+&nbsp;&nbsp;&theta;<sub>hip</sub> = atan2(x<sub>knee</sub> &minus; x<sub>hip</sub>, y<sub>hip</sub> &minus; y<sub>knee</sub>) &times; 180/&pi;<br>
+<br>
+<strong>Knee flexion</strong> (0&deg; = fully extended):<br>
+&nbsp;&nbsp;&theta;<sub>knee-flex</sub> = (180&deg; &minus; &theta;<sub>knee</sub>)
+</div>
+
+<p>The <strong>range of motion</strong> (ROM) is the difference between maximum and minimum joint angle
+across one full pedal revolution:</p>
+
+<div class="eq">
+ROM<sub>hip</sub> = max(&theta;<sub>hip</sub>) &minus; min(&theta;<sub>hip</sub>) over &theta; &isin; [0, 2&pi;)<br>
+ROM<sub>knee</sub> = max(&theta;<sub>knee-flex</sub>) &minus; min(&theta;<sub>knee-flex</sub>) over &theta; &isin; [0, 2&pi;)
+</div>
+
+<h3>Typical ROM Values (default parameters)</h3>
+
+<table>
+<tr><th>Crank Length</th><th>Hip ROM</th><th>Knee ROM</th></tr>
+<tr><td>150 mm</td><td>44.4&deg;</td><td>75.1&deg;</td></tr>
+<tr><td>170 mm</td><td>49.5&deg;</td><td>81.8&deg;</td></tr>
+<tr><td>180 mm</td><td>52.1&deg;</td><td>85.1&deg;</td></tr>
+</table>
+
+<p>These align closely with published research: Barratt et al. reported hip ROM of ~45&deg; at
+150 mm vs ~51&deg; at 180 mm, and knee ROM of ~67&deg; at 150 mm vs ~75&deg; at 180 mm
+(our model's absolute values differ slightly due to simplified 2-link geometry, but the
+<em>trends and magnitudes</em> are consistent).</p>
+
+<hr>
+
+<h1 id="s4">4. Pedal Force Model</h1>
+
+<p>The effective (tangential) pedal force &mdash; the component that actually produces crank torque &mdash;
+varies through the pedal stroke. The model uses a <strong>phenomenological profile</strong>
+that approximates measured pedal force data from instrumented studies:</p>
+
+<h2>Downstroke (0 &le; &theta; &lt; &pi;)</h2>
+
+<div class="eq eq-orange">
+F<sub>eff</sub>(&theta;) = F<sub>peak</sub> &middot; sin(&theta;) &middot; (1 + 0.1 &middot; sin(2&theta; &minus; &pi;/3))
+</div>
+
+<p>The primary <code>sin(&theta;)</code> term creates the basic activation pattern: zero at TDC,
+peak near 90&deg;, back to zero at BDC. The modulation term
+<code>(1 + 0.1 &middot; sin(2&theta; &minus; &pi;/3))</code> introduces two effects:</p>
+<ul>
+<li>Shifts the force peak slightly past 90&deg; toward ~100&deg;, matching EMG (muscle activation) data
+that shows peak quad activation occurs just after the 3 o'clock position</li>
+<li>Creates a slight asymmetry in the downstroke shape</li>
+</ul>
+
+<h2>Upstroke (&pi; &le; &theta; &lt; 2&pi;)</h2>
+
+<div class="eq eq-orange">
+F<sub>eff</sub>(&theta;) = &minus;F<sub>peak</sub> &middot; k<sub>upstroke</sub> &middot; sin(&theta; &minus; &pi;)
+</div>
+
+<p>where <em>k<sub>upstroke</sub></em> = 0.05 (5% of peak downstroke force). The <strong>negative</strong>
+sign indicates this force <em>opposes</em> crank rotation &mdash; during the upstroke, the weight
+of the rising leg resists motion. Even with clipless pedals, most riders produce very little
+positive upstroke force; trained cyclists with clipless pedals might reach
+<em>k<sub>upstroke</sub></em> = 0.15&ndash;0.25.</p>
+
+<div class="note">
+<strong>Important:</strong> <em>F<sub>eff</sub></em> represents the <em>tangential</em> component of pedal
+force &mdash; the part perpendicular to the crank arm that produces torque. The radial component
+(along the crank arm) does no useful work. Force-instrumented pedals measure both components, but
+only the tangential component matters for propulsion. Our model defines the force profile directly
+as this effective tangential component.
+</div>
+
+<hr>
+
+<h1 id="s5">5. Torque &amp; Power</h1>
+
+<h2>Instantaneous Crank Torque</h2>
+
+<p>Torque is force times lever arm length:</p>
+
+<div class="eq">
+&tau;(&theta;) = F<sub>eff</sub>(&theta;) &times; L<sub>crank</sub>
+</div>
+
+<p>This is the fundamental mechanical advantage equation. Longer cranks multiply force into
+more torque, but research shows that within the typical 145&ndash;175 mm range, this advantage is
+almost entirely offset by compensatory changes in cadence and pedaling mechanics
+(see <a href="#s10">References</a>).</p>
+
+<h2>Instantaneous Power</h2>
+
+<p>Power is torque times angular velocity:</p>
+
+<div class="eq">
+P(&theta;) = &tau;(&theta;) &times; &omega;
+</div>
+
+<p>where &omega; is the angular velocity in radians per second:</p>
+
+<div class="eq">
+&omega; = 2&pi; &times; cadence<sub>rpm</sub> / 60
+</div>
+
+<p>Since &omega; is constant (steady-state cadence assumption), <strong>instantaneous power has
+exactly the same shape as the force profile</strong> &mdash; just scaled by
+<em>L<sub>crank</sub> &times; &omega;</em>.</p>
+
+<h2>Average Power</h2>
+
+<p>The average power over one complete revolution is the mean of instantaneous power across
+360 evenly-spaced samples:</p>
+
+<div class="eq">
+P<sub>avg</sub> = (1/360) &times; &Sigma;<sub>i=0</sub><sup>359</sup> P(&theta;<sub>i</sub>)
+</div>
+
+<h2>Cumulative Energy</h2>
+
+<p>Displayed during animation as the total mechanical work done:</p>
+
+<div class="eq eq-green">
+E(t) = P<sub>avg</sub> &times; t &nbsp;&nbsp;&nbsp; (in joules; displayed as kJ)
+</div>
+
+<hr>
+
+<h1 id="s6">6. Efficiency Models</h1>
+
+<p>The simulator reports two efficiency metrics, reflecting the distinction between physiological
+and whole-system efficiency.</p>
+
+<h2>Physiological (Metabolic) Efficiency</h2>
+
+<p>This is the research-derived efficiency of converting metabolic energy into mechanical work
+at the pedals. It varies with crank length based on a linear interpolation of published data
+from Barratt et al.:</p>
+
+<div class="eq eq-green">
+&eta;<sub>base</sub>(L) = 0.221 &minus; (0.005 / 0.030) &times; (L &minus; 0.150)
+</div>
+
+<p>where <em>L</em> is crank length in meters. This gives:</p>
+
+<table>
+<tr><th>Crank Length</th><th>&eta;<sub>base</sub></th></tr>
+<tr><td>150 mm</td><td>22.1%</td></tr>
+<tr><td>165 mm</td><td>21.85%</td></tr>
+<tr><td>170 mm</td><td>21.77%</td></tr>
+<tr><td>175 mm</td><td>21.68%</td></tr>
+<tr><td>180 mm</td><td>21.6%</td></tr>
+</table>
+
+<p>The value is clamped to the range [15%, 25%] for extreme crank lengths outside the
+research data range.</p>
+
+<div class="note">
+<strong>Why shorter cranks are more efficient:</strong> Shorter cranks reduce the range of motion at the
+hip and knee joints. This means the leg muscles operate closer to their optimal
+length-tension relationship throughout the pedal stroke, and less energy is wasted on
+accelerating/decelerating the limbs through large angular excursions. The muscles also
+operate at more favorable shortening velocities (force-velocity relationship). The effect is
+modest (~0.5% absolute between 150 mm and 180 mm) but measurable and consistent across studies.
+</div>
+
+<h2>Gross Efficiency</h2>
+
+<p>The net efficiency including basal (resting) metabolic cost. This represents the overall
+fraction of total energy expenditure that becomes mechanical work:</p>
+
+<div class="eq">
+&eta;<sub>gross</sub> = P<sub>avg</sub> / (P<sub>avg</sub> / &eta;<sub>base</sub> + P<sub>rest</sub>)
+</div>
+
+<p>where <em>P<sub>rest</sub></em> = 75 W is the resting metabolic rate. This value is always lower
+than &eta;<sub>base</sub> because the resting metabolic cost is a fixed overhead that dilutes
+efficiency. At low power outputs, gross efficiency is much lower than metabolic efficiency; at
+high power outputs, they converge.</p>
+
+<hr>
+
+<h1 id="s7">7. Optimal Cadence</h1>
+
+<p>Research shows that the cadence which minimizes metabolic cost (or maximizes efficiency)
+shifts upward with shorter cranks. The model uses an empirical fit:</p>
+
+<div class="eq">
+cadence<sub>optimal</sub>(L) = 120 &times; &radic;(0.170 / L)
+</div>
+
+<p>Calibrated against research data:</p>
+
+<table>
+<tr><th>Crank Length</th><th>Model Prediction</th><th>Research Data</th></tr>
+<tr><td>150 mm</td><td>~128 rpm</td><td>~130 rpm</td></tr>
+<tr><td>170 mm</td><td>120 rpm</td><td>120 rpm (reference)</td></tr>
+<tr><td>200 mm</td><td>~111 rpm</td><td>~110&ndash;120 rpm</td></tr>
+</table>
+
+<p>The square-root scaling reflects the biomechanical principle that shorter cranks reduce pedal
+travel distance per revolution, allowing higher spin rates before muscle contraction velocity
+penalties dominate. This value is displayed as a reference only &mdash; the user sets their own
+cadence.</p>
+
+<hr>
+
+<h1 id="s8">8. Constant Power Mode</h1>
+
+<p>The simulator offers two comparison modes:</p>
+
+<h3>Constant Force Mode (default)</h3>
+<p>Both sides use the same peak pedal force (<em>F<sub>peak</sub></em>). This shows the pure
+mechanical effect of crank length: the longer crank produces more torque and power simply because
+<em>&tau; = F &times; L</em>. This is useful for understanding the physics, but doesn't reflect
+how a rider actually behaves.</p>
+
+<h3>Constant Power Mode</h3>
+<p>Side B's peak force is adjusted so that its average power matches Side A. This models a
+rider who adjusts their effort to maintain the same output regardless of crank length:</p>
+
+<div class="eq">
+F<sub>peak,B</sub><sup>(adjusted)</sup> = F<sub>peak</sub> &times; (P<sub>avg,A</sub> / P<sub>avg,B</sub>)
+</div>
+
+<p>This mode reveals the interesting finding from research: to maintain the same power with shorter
+cranks, a rider pushes slightly harder per stroke, but the net effect on perceived effort and
+fatigue is still lower due to reduced joint excursion and more favorable muscle mechanics.</p>
+
+<hr>
+
+<h1 id="s9">9. Assumptions &amp; Limitations</h1>
+
+<ol>
+<li><strong>Rigid links:</strong> No soft tissue deformation, no shoe/pedal compliance, no elastic
+energy storage in tendons.</li>
+
+<li><strong>Sagittal plane only:</strong> 2D model. No lateral knee motion, no Q-factor (pedal
+stance width), no hip ab/adduction. Real cycling involves non-trivial out-of-plane motion,
+especially at the knee.</li>
+
+<li><strong>Fixed hip:</strong> No pelvic rock, no postural sway, no saddle interaction. In reality,
+the hip oscillates several millimeters per pedal stroke, especially at high cadences.</li>
+
+<li><strong>Single leg:</strong> Only one leg is modeled per side. The contralateral leg would be 180&deg;
+out of phase but is omitted for visual clarity.</li>
+
+<li><strong>No inertial effects:</strong> The model assumes constant angular velocity (no flywheel
+effects, no crank acceleration within a revolution). Real pedaling involves crank speed
+fluctuations of &plusmn;5&ndash;15% within each revolution.</li>
+
+<li><strong>Steady state:</strong> Constant cadence, no fatigue progression, no metabolic drift.</li>
+
+<li><strong>Phenomenological force profile:</strong> The pedal force shape is an approximation based
+on typical EMG and force-pedal data. A true musculoskeletal model would compute forces from
+individual muscle activations using Hill-type muscle models, accounting for force-length and
+force-velocity relationships. This would make the force profile itself depend on crank
+length, but requires ~50 muscle parameters and substantially more computational complexity.</li>
+
+<li><strong>Linear efficiency interpolation:</strong> The metabolic efficiency is linearly
+interpolated between two data points (150 mm and 180 mm). The true relationship may be
+nonlinear, and individual variation is large.</li>
+</ol>
+
+<hr>
+
+<h1 id="s10">10. Research References</h1>
+
+<p>The following published studies informed the model parameters and validation targets:</p>
+
+<h3>Joint Kinematics &amp; Crank Length</h3>
+
+<p class="ref">[1] Barratt, P.R., Korff, T., Elmer, S.J., &amp; Martin, J.C. (2011). "Effects of Pedal
+Speed and Crank Length on Pedaling Mechanics during Submaximal Cycling."
+<em>Medicine &amp; Science in Sports &amp; Exercise</em>.
+<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5638423/">PMC5638423</a><br>
+&mdash; Key findings used: crank length significantly affects ankle, knee, and hip angular
+excursions (p&lt;0.001). Hip and knee ROM increase with longer cranks. Joint moments are
+largely unaffected by crank length at matched pedal speeds.</p>
+
+<p class="ref">[2] Turpin, N.A. &amp; Watier, B. (2025). "The impact of minor crank length adjustments
+on lower body cycling kinematics." <em>Sports Biomechanics</em>.
+<a href="https://www.tandfonline.com/doi/full/10.1080/14763141.2025.2511755">DOI link</a><br>
+&mdash; Minor crank reductions decrease hip and knee flexion and limit non-sagittal plane motion,
+potentially reducing overuse injury risk.</p>
+
+<h3>Efficiency &amp; Economy</h3>
+
+<p class="ref">[3] Phan, G.T., et al. (2022). "Cycling with Short Crank Lengths Improved Economy
+in Novices." <em>International Journal of Exercise Science</em>.
+<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC8758175/">PMC8758175</a><br>
+&mdash; Novice cyclists achieved 3&ndash;5.5% greater power output with 145 mm cranks vs 175 mm
+at 60% VO<sub>2</sub>peak, with no difference in physiological parameters (HR, RER, lactate).
+Cycling economy was significantly better at all time points (p&lt;0.03). Large effect sizes
+(Cohen's d = 0.80&ndash;1.19).</p>
+
+<p class="ref">[4] ThickBits Research. "Optimal Crank Length Analysis."
+<a href="https://thickbits.com/research/optimal-crank-length-biomechanics">thickbits.com</a><br>
+&mdash; Comprehensive analysis showing: within 145&ndash;170 mm range, power varies by only ~1.6%.
+Gross efficiency: ~22.1% at 150 mm vs ~21.6% at 180 mm. Optimal cadence scales from ~130 rpm
+at 150 mm to ~110&ndash;120 rpm at 200+ mm.</p>
+
+<h3>Fatigue &amp; Performance</h3>
+
+<p class="ref">[5] Ortega-Montiel, J., et al. (2025). "Effects of crank length on cycling efficiency,
+sprint performance, and perceived fatigue in high-level amateur road cyclists."
+<em>PeerJ</em>.
+<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12060448/">PMC12060448</a><br>
+&mdash; 28 trained cyclists (VO<sub>2</sub>max ~59 ml/kg/min). No significant differences in sprint
+peak power (~13.2 W/kg) or economy across 165/170/175 mm cranks. Perceived fatigue (RPE) was
+significantly lower with shorter cranks: 3.21&plusmn;0.88 at 165 mm vs 4.50&plusmn;0.69 at 175 mm
+(p&lt;0.001, &delta;=&minus;0.72).</p>
+
+<h3>Torque &amp; Force Modeling</h3>
+
+<p class="ref">[6] Rasmussen, J., et al. (2015). "Prediction of crank torque and pedal angle profiles
+during pedaling movements by biomechanical optimization."
+<em>Structural and Multidisciplinary Optimization</em>.
+<a href="https://link.springer.com/article/10.1007/s00158-014-1135-6">Springer link</a><br>
+&mdash; Inverse-inverse dynamics method for predicting pedaling motion. Musculoskeletal model with
+parameterized movement optimized against user-defined cost functions.</p>
+
+<p class="ref">[7] Quintana-Duque, J.C., et al. (2015). "Estimation of Torque Variation from Pedal
+Motion in Cycling." <em>Proc. ISBS</em>.
+<a href="https://www.uni-konstanz.de/mmsp/pubsys/publishedFiles/QuDaSa15.pdf">PDF</a><br>
+&mdash; Methods for estimating crank torque from motion data. Net torque decomposition into
+applied torque and brake torque components.</p>
+
+<h3>Aerodynamic Case Study</h3>
+
+<p class="ref">[8] British Cycling / ThickBits analysis of Bradley Wiggins' hour record preparation.<br>
+&mdash; Crank reduction from 177.5 mm to 165 mm allowed a 30 mm front-end drop, resulting in
+~3.5% aerodynamic drag (CdA) reduction. Demonstrates that shorter cranks enable more aggressive
+aerodynamic positioning as a secondary benefit beyond the direct biomechanical effects.</p>
+
+<hr>
+
+<p style="text-align: center; color: #666; font-size: 12px; margin-top: 30px;">
+Bicycle Pedal Stroke Simulator &mdash; Technical Guide<br>
+Model equations and research review compiled February 2026
+</p>
+
+</body>
+</html>
